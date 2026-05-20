@@ -3,6 +3,8 @@ using System.Collections.Generic;
 using System.Linq;
 using UnityEngine;
 using UnityEngine.EventSystems;
+using UnityEngine.InputSystem;
+using UnityEngine.InputSystem.UI;
 using UnityEngine.UI;
 
 namespace GroundZero.PuzzleCore
@@ -68,7 +70,7 @@ namespace GroundZero.PuzzleCore
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
         private static void Bootstrap()
         {
-            if (FindObjectOfType<PuzzleCoreGame>() != null)
+            if (FindAnyObjectByType<PuzzleCoreGame>() != null)
             {
                 return;
             }
@@ -79,7 +81,7 @@ namespace GroundZero.PuzzleCore
 
         private void Awake()
         {
-            if (FindObjectsOfType<PuzzleCoreGame>().Length > 1)
+            if (FindObjectsByType<PuzzleCoreGame>(FindObjectsInactive.Exclude).Length > 1)
             {
                 Destroy(gameObject);
                 return;
@@ -104,41 +106,27 @@ namespace GroundZero.PuzzleCore
                 return;
             }
 
-            var keys = new[]
+            if (!TryReadPuzzleKey(out var key))
             {
-                KeyCode.UpArrow, KeyCode.W,
-                KeyCode.DownArrow, KeyCode.S,
-                KeyCode.LeftArrow, KeyCode.A,
-                KeyCode.RightArrow, KeyCode.D,
-                KeyCode.R,
-                KeyCode.Escape
-            };
+                return;
+            }
 
-            foreach (var key in keys)
+            if (key == KeyCode.Escape)
             {
-                if (!Input.GetKeyDown(key))
-                {
-                    continue;
-                }
+                ShowMainMenu();
+                return;
+            }
 
-                if (key == KeyCode.Escape)
-                {
-                    ShowMainMenu();
-                    return;
-                }
+            if (key == KeyCode.R)
+            {
+                activePuzzle.Reset();
+                RenderGame();
+                return;
+            }
 
-                if (key == KeyCode.R)
-                {
-                    activePuzzle.Reset();
-                    RenderGame();
-                    return;
-                }
-
-                if (activePuzzle.HandleKey(key))
-                {
-                    AfterPuzzleChanged();
-                    return;
-                }
+            if (activePuzzle.HandleKey(key))
+            {
+                AfterPuzzleChanged();
             }
         }
 
@@ -156,12 +144,15 @@ namespace GroundZero.PuzzleCore
             scaler.referenceResolution = new Vector2(1920, 1080);
             scaler.matchWidthOrHeight = 0.5f;
 
-            var eventSystem = FindObjectOfType<EventSystem>();
+            var eventSystem = FindAnyObjectByType<EventSystem>();
             if (eventSystem == null)
             {
-                var eventObject = new GameObject("EventSystem", typeof(EventSystem), typeof(StandaloneInputModule));
+                var eventObject = new GameObject("EventSystem", typeof(EventSystem));
                 eventObject.transform.SetParent(transform, false);
+                eventSystem = eventObject.GetComponent<EventSystem>();
             }
+
+            ConfigureEventSystem(eventSystem.gameObject);
 
             root = canvasObject.GetComponent<RectTransform>();
             Stretch(root);
@@ -769,6 +760,101 @@ namespace GroundZero.PuzzleCore
 
             direction = Vector2Int.zero;
             return false;
+        }
+
+        private static bool TryReadPuzzleKey(out KeyCode key)
+        {
+            var keyboard = Keyboard.current;
+            key = KeyCode.None;
+
+            if (keyboard == null)
+            {
+                return false;
+            }
+
+            if (keyboard.upArrowKey.wasPressedThisFrame)
+            {
+                key = KeyCode.UpArrow;
+                return true;
+            }
+
+            if (keyboard.wKey.wasPressedThisFrame)
+            {
+                key = KeyCode.W;
+                return true;
+            }
+
+            if (keyboard.downArrowKey.wasPressedThisFrame)
+            {
+                key = KeyCode.DownArrow;
+                return true;
+            }
+
+            if (keyboard.sKey.wasPressedThisFrame)
+            {
+                key = KeyCode.S;
+                return true;
+            }
+
+            if (keyboard.leftArrowKey.wasPressedThisFrame)
+            {
+                key = KeyCode.LeftArrow;
+                return true;
+            }
+
+            if (keyboard.aKey.wasPressedThisFrame)
+            {
+                key = KeyCode.A;
+                return true;
+            }
+
+            if (keyboard.rightArrowKey.wasPressedThisFrame)
+            {
+                key = KeyCode.RightArrow;
+                return true;
+            }
+
+            if (keyboard.dKey.wasPressedThisFrame)
+            {
+                key = KeyCode.D;
+                return true;
+            }
+
+            if (keyboard.rKey.wasPressedThisFrame)
+            {
+                key = KeyCode.R;
+                return true;
+            }
+
+            if (keyboard.escapeKey.wasPressedThisFrame)
+            {
+                key = KeyCode.Escape;
+                return true;
+            }
+
+            return false;
+        }
+
+        private static void ConfigureEventSystem(GameObject eventObject)
+        {
+            foreach (var standaloneInput in eventObject.GetComponents<StandaloneInputModule>())
+            {
+                standaloneInput.enabled = false;
+                Destroy(standaloneInput);
+            }
+
+            var inputModule = eventObject.GetComponent<InputSystemUIInputModule>();
+            if (inputModule == null)
+            {
+                inputModule = eventObject.AddComponent<InputSystemUIInputModule>();
+            }
+
+            if (inputModule.actionsAsset == null)
+            {
+                inputModule.AssignDefaultActions();
+            }
+
+            inputModule.enabled = true;
         }
 
         [Serializable]
