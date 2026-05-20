@@ -9,6 +9,7 @@ using UnityEngine.UI;
 
 namespace GroundZero.PuzzleCore
 {
+    [DefaultExecutionOrder(-10000)]
     public sealed class PuzzleCoreGame : MonoBehaviour
     {
         private const string SaveKey = "GroundZero.PuzzleCore.Save";
@@ -70,6 +71,8 @@ namespace GroundZero.PuzzleCore
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
         private static void Bootstrap()
         {
+            ConfigureAllEventSystems();
+
             if (FindAnyObjectByType<PuzzleCoreGame>() != null)
             {
                 return;
@@ -101,6 +104,8 @@ namespace GroundZero.PuzzleCore
 
         private void Update()
         {
+            ConfigureAllEventSystems();
+
             if (!runActive || activePuzzle == null || levelSolved)
             {
                 return;
@@ -144,15 +149,13 @@ namespace GroundZero.PuzzleCore
             scaler.referenceResolution = new Vector2(1920, 1080);
             scaler.matchWidthOrHeight = 0.5f;
 
-            var eventSystem = FindAnyObjectByType<EventSystem>();
-            if (eventSystem == null)
+            if (FindAnyObjectByType<EventSystem>() == null)
             {
                 var eventObject = new GameObject("EventSystem", typeof(EventSystem));
                 eventObject.transform.SetParent(transform, false);
-                eventSystem = eventObject.GetComponent<EventSystem>();
             }
 
-            ConfigureEventSystem(eventSystem.gameObject);
+            ConfigureAllEventSystems();
 
             root = canvasObject.GetComponent<RectTransform>();
             Stretch(root);
@@ -835,18 +838,32 @@ namespace GroundZero.PuzzleCore
             return false;
         }
 
-        private static void ConfigureEventSystem(GameObject eventObject)
+        private static void ConfigureAllEventSystems()
         {
-            foreach (var standaloneInput in eventObject.GetComponents<StandaloneInputModule>())
+            var eventSystems = FindObjectsByType<EventSystem>(FindObjectsInactive.Exclude);
+            foreach (var eventSystem in eventSystems)
+            {
+                ConfigureEventSystem(eventSystem);
+            }
+        }
+
+        private static void ConfigureEventSystem(EventSystem eventSystem)
+        {
+            if (eventSystem == null)
+            {
+                return;
+            }
+
+            foreach (var standaloneInput in eventSystem.GetComponents<StandaloneInputModule>())
             {
                 standaloneInput.enabled = false;
                 Destroy(standaloneInput);
             }
 
-            var inputModule = eventObject.GetComponent<InputSystemUIInputModule>();
+            var inputModule = eventSystem.GetComponent<InputSystemUIInputModule>();
             if (inputModule == null)
             {
-                inputModule = eventObject.AddComponent<InputSystemUIInputModule>();
+                inputModule = eventSystem.gameObject.AddComponent<InputSystemUIInputModule>();
             }
 
             if (inputModule.actionsAsset == null)
@@ -855,6 +872,7 @@ namespace GroundZero.PuzzleCore
             }
 
             inputModule.enabled = true;
+            eventSystem.UpdateModules();
         }
 
         [Serializable]
