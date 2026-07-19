@@ -14,6 +14,9 @@ namespace GroundZero.PuzzleCore
     {
         private const string SaveKey = "GroundZero.PuzzleCore.Save";
         private const int DailySeedOffset = 73471;
+        private const int LevelsPerGameType = 200;
+        private const int DifficultyTiers = 5;
+        private const int LevelsPerDifficulty = LevelsPerGameType / DifficultyTiers;
 
         private static readonly Color Background = Rgb(15, 18, 24);
         private static readonly Color Panel = Rgb(29, 34, 45);
@@ -67,6 +70,8 @@ namespace GroundZero.PuzzleCore
         private bool levelSolved;
         private bool runActive;
         private bool endlessMode;
+        private bool campaignMode;
+        private PuzzleType campaignType;
 
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
         private static void Bootstrap()
@@ -168,48 +173,60 @@ namespace GroundZero.PuzzleCore
         {
             runActive = false;
             endlessMode = false;
+            campaignMode = false;
             activePuzzle = null;
             Clear(root);
 
-            var page = Stack(root, "Main Menu", 34, TextAnchor.UpperCenter);
-            page.padding = new RectOffset(80, 80, 72, 72);
+            var page = Stack(root, "Main Menu", 24, TextAnchor.UpperCenter);
+            page.padding = new RectOffset(72, 72, 56, 56);
 
-            Label(page.transform, "Puzzle Core: Ground Zero", 58, FontStyle.Bold, TextAnchor.MiddleCenter, TextMain, 84);
-            Label(page.transform, "Endless verified puzzle runs for desktop and Steam.", 24, FontStyle.Normal, TextAnchor.MiddleCenter, TextMuted, 42);
+            Label(page.transform, "Puzzle Core: Ground Zero", 58, FontStyle.Bold, TextAnchor.MiddleCenter, TextMain, 78);
+            Label(page.transform, "Choose a puzzle campaign: 200 levels per game type, split into five escalating difficulty tiers.", 24, FontStyle.Normal, TextAnchor.MiddleCenter, TextMuted, 48);
 
-            var stats = PanelBox(page.transform, "Stats", PanelSoft);
-            var statsStack = Stack(stats, "Stats Stack", 12, TextAnchor.MiddleCenter);
-            statsStack.padding = new RectOffset(28, 28, 22, 22);
-            var saveSummary = save.HasRun
-                ? "Saved run: level " + (save.LevelIndex + 1) + " / seed " + save.MasterSeed
-                : "No active endless run yet";
-            Label(statsStack.transform, saveSummary, 24, FontStyle.Bold, TextAnchor.MiddleCenter, TextMain, 34);
+            var stats = PanelBox(page.transform, "Campaign Stats", PanelSoft);
+            var statsStack = Stack(stats, "Stats Stack", 10, TextAnchor.MiddleCenter);
+            statsStack.padding = new RectOffset(28, 28, 18, 18);
+            Label(statsStack.transform, "Campaign progress: " + save.CompletedCampaignLevels() + " / " + (rotation.Length * LevelsPerGameType) + " levels", 24, FontStyle.Bold, TextAnchor.MiddleCenter, TextMain, 34);
             Label(statsStack.transform, "Solved total: " + save.CompletedLevels + "    Best streak: " + save.BestStreak, 20, FontStyle.Normal, TextAnchor.MiddleCenter, TextMuted, 30);
-            AddLayout(stats, -1, 118);
+            AddLayout(stats, -1, 112);
 
-            var buttons = Stack(page.transform, "Menu Buttons", 14, TextAnchor.MiddleCenter);
-            buttons.padding = new RectOffset(580, 580, 0, 0);
+            var campaignPanel = PanelBox(page.transform, "Campaigns", Panel);
+            var campaigns = Stack(campaignPanel, "Campaign Stack", 12, TextAnchor.UpperCenter);
+            campaigns.padding = new RectOffset(18, 18, 18, 18);
+            Label(campaigns.transform, "Campaigns", 28, FontStyle.Bold, TextAnchor.MiddleCenter, TextMain, 42);
 
-            if (save.HasRun)
+            for (var rowIndex = 0; rowIndex < 2; rowIndex++)
             {
-                Button(buttons.transform, "Continue Endless Run", ContinueRun, Success, TextMain, 24, 64);
+                var row = Row(campaigns.transform, "Campaign Row " + rowIndex, 12, TextAnchor.MiddleCenter);
+                AddLayout(row.GetComponent<RectTransform>(), -1, 78);
+
+                for (var col = 0; col < 5; col++)
+                {
+                    var typeIndex = rowIndex * 5 + col;
+                    if (typeIndex >= rotation.Length)
+                    {
+                        continue;
+                    }
+
+                    var capturedType = rotation[typeIndex];
+                    var progress = save.GetCampaignLevel(capturedType);
+                    var buttonText = PuzzleTitle(capturedType) + "\n" + Math.Min(progress + 1, LevelsPerGameType) + "/" + LevelsPerGameType;
+                    var color = progress >= LevelsPerGameType ? Success : DifficultyColor(DifficultyForLevel(progress));
+                    Button(row.transform, buttonText, () => StartCampaign(capturedType, save.GetCampaignLevel(capturedType)), color, TextMain, 18, 68, 188);
+                }
             }
 
-            Button(buttons.transform, "New Endless Run", () =>
-            {
-                var seed = unchecked((int)(DateTime.UtcNow.Ticks & 0x7fffffff));
-                StartRun(seed, 0);
-            }, Rgb(72, 116, 220), TextMain, 24, 64);
+            AddLayout(campaignPanel, -1, 252);
 
-            Button(buttons.transform, "Daily Run", () =>
+            var buttons = Row(page.transform, "Menu Buttons", 14, TextAnchor.MiddleCenter);
+            Button(buttons.transform, "Daily Challenge", () =>
             {
                 var today = DateTime.UtcNow.Date;
                 var seed = today.Year * 10000 + today.Month * 100 + today.Day + DailySeedOffset;
                 StartRun(seed, 0);
-            }, Rgb(102, 80, 188), TextMain, 24, 64);
-
-            Button(buttons.transform, "Puzzle Lab", ShowPuzzleLab, PanelSoft, TextMain, 24, 64);
-            Button(buttons.transform, "Quit", Application.Quit, TileDark, TextMuted, 22, 56);
+            }, Rgb(102, 80, 188), TextMain, 22, 60, 240);
+            Button(buttons.transform, "Puzzle Lab", ShowPuzzleLab, PanelSoft, TextMain, 22, 60, 240);
+            Button(buttons.transform, "Quit", Application.Quit, TileDark, TextMuted, 22, 60, 180);
 
             var footer = Label(page.transform, "Keyboard: WASD/arrows where movement applies, R resets, Esc returns to menu.", 18, FontStyle.Normal, TextAnchor.LowerCenter, TextMuted, 42);
             footer.resizeTextForBestFit = true;
@@ -219,6 +236,7 @@ namespace GroundZero.PuzzleCore
         {
             runActive = false;
             endlessMode = false;
+            campaignMode = false;
             activePuzzle = null;
             Clear(root);
 
@@ -246,6 +264,7 @@ namespace GroundZero.PuzzleCore
                         levelSolved = false;
                         runActive = true;
                         endlessMode = false;
+                        campaignMode = false;
                         RenderGame();
                     }, Tile, TextMain, 16, 52, 140);
                 }
@@ -272,11 +291,22 @@ namespace GroundZero.PuzzleCore
             masterSeed = seed;
             levelIndex = Math.Max(0, index);
             endlessMode = true;
+            campaignMode = false;
             save.HasRun = true;
             save.MasterSeed = masterSeed;
             save.LevelIndex = levelIndex;
             Save();
             CreateCurrentLevel();
+        }
+
+        private void StartCampaign(PuzzleType type, int index)
+        {
+            campaignType = type;
+            masterSeed = Hash((int)type + 1, 200);
+            levelIndex = Math.Max(0, Math.Min(index, LevelsPerGameType - 1));
+            endlessMode = false;
+            campaignMode = true;
+            CreateCampaignLevel();
         }
 
         private void CreateCurrentLevel()
@@ -285,6 +315,16 @@ namespace GroundZero.PuzzleCore
             var difficulty = DifficultyForLevel(levelIndex);
             var seed = Hash(masterSeed, levelIndex + 1);
             activePuzzle = CreatePuzzle(type, difficulty, seed);
+            levelSolved = false;
+            runActive = true;
+            RenderGame();
+        }
+
+        private void CreateCampaignLevel()
+        {
+            var difficulty = DifficultyForLevel(levelIndex);
+            var seed = Hash(Hash(masterSeed, (int)campaignType + 1), levelIndex + 1);
+            activePuzzle = CreatePuzzle(campaignType, difficulty, seed);
             levelSolved = false;
             runActive = true;
             RenderGame();
@@ -337,8 +377,10 @@ namespace GroundZero.PuzzleCore
             Label(titleStack.transform, activePuzzle.Objective, 17, FontStyle.Normal, TextAnchor.MiddleLeft, TextMuted, 28);
 
             var meta = endlessMode
-                ? "Level " + (levelIndex + 1) + " / " + activePuzzle.Difficulty + " / seed " + masterSeed
-                : activePuzzle.Difficulty + " lab seed";
+                ? "Daily level " + (levelIndex + 1) + " / " + activePuzzle.Difficulty + " / seed " + masterSeed
+                : campaignMode
+                    ? PuzzleTitle(campaignType) + " " + (levelIndex + 1) + "/" + LevelsPerGameType + " / " + activePuzzle.Difficulty
+                    : activePuzzle.Difficulty + " lab seed";
             Label(header.transform, meta, 19, FontStyle.Normal, TextAnchor.MiddleRight, TextMuted, 440, 52);
 
             var movesText = activePuzzle is Match3Puzzle match3
@@ -359,11 +401,11 @@ namespace GroundZero.PuzzleCore
                 solved.padding = new RectOffset(20, 20, 12, 12);
                 solved.GetComponent<Image>().color = Rgb(35, 74, 50);
                 AddLayout(solved.GetComponent<RectTransform>(), -1, 74);
-                Label(solved.transform, "Verified clear. The level is complete.", 23, FontStyle.Bold, TextAnchor.MiddleCenter, TextMain, 520, 48);
-                if (endlessMode)
-                {
-                    Button(solved.transform, "Next Level", CompleteAndAdvance, Success, TextMain, 22, 50, 220);
-                }
+                var solvedText = !endlessMode && levelIndex >= LevelsPerGameType - 1
+                    ? "Campaign complete. Every level in this game type is cleared."
+                    : "Verified clear. The level is complete.";
+                Label(solved.transform, solvedText, 23, FontStyle.Bold, TextAnchor.MiddleCenter, TextMain, 620, 48);
+                Button(solved.transform, !endlessMode && levelIndex >= LevelsPerGameType - 1 ? "Campaigns" : "Next Level", CompleteAndAdvance, Success, TextMain, 22, 50, 220);
             }
             else if (activePuzzle.IsFailed)
             {
@@ -399,14 +441,19 @@ namespace GroundZero.PuzzleCore
                     Save();
                     CreateCurrentLevel();
                 }
+                else if (campaignMode)
+                {
+                    levelIndex = Math.Min(levelIndex + 1, LevelsPerGameType - 1);
+                    CreateCampaignLevel();
+                }
                 else
                 {
                     ShowPuzzleLab();
                 }
             }, Tile, TextMain, 20, 54, 180);
-            if (endlessMode && activePuzzle.IsSolved)
+            if (activePuzzle.IsSolved)
             {
-                Button(footer.transform, "Next", CompleteAndAdvance, Success, TextMain, 20, 54, 180);
+                Button(footer.transform, !endlessMode && levelIndex >= LevelsPerGameType - 1 ? "Campaigns" : "Next", CompleteAndAdvance, Success, TextMain, 20, 54, 180);
             }
         }
 
@@ -422,6 +469,14 @@ namespace GroundZero.PuzzleCore
                     save.BestStreak = Math.Max(save.BestStreak, save.CurrentStreak);
                     Save();
                 }
+                else if (campaignMode)
+                {
+                    save.CompletedLevels++;
+                    save.CurrentStreak++;
+                    save.BestStreak = Math.Max(save.BestStreak, save.CurrentStreak);
+                    save.SetCampaignLevel(campaignType, Math.Max(save.GetCampaignLevel(campaignType), Math.Min(levelIndex + 1, LevelsPerGameType)));
+                    Save();
+                }
             }
 
             RenderGame();
@@ -429,16 +484,32 @@ namespace GroundZero.PuzzleCore
 
         private void CompleteAndAdvance()
         {
-            if (!endlessMode)
+            if (!endlessMode && !campaignMode)
+            {
+                ShowMainMenu();
+                return;
+            }
+
+            if (endlessMode)
+            {
+                levelIndex++;
+                save.LevelIndex = levelIndex;
+                Save();
+                CreateCurrentLevel();
+                return;
+            }
+
+            save.SetCampaignLevel(campaignType, Math.Max(save.GetCampaignLevel(campaignType), Math.Min(levelIndex + 1, LevelsPerGameType)));
+            Save();
+
+            if (levelIndex >= LevelsPerGameType - 1)
             {
                 ShowMainMenu();
                 return;
             }
 
             levelIndex++;
-            save.LevelIndex = levelIndex;
-            Save();
-            CreateCurrentLevel();
+            CreateCampaignLevel();
         }
 
         private SaveData LoadSave()
@@ -644,27 +715,28 @@ namespace GroundZero.PuzzleCore
 
         private static Difficulty DifficultyForLevel(int index)
         {
-            if (index < 3)
-            {
-                return Difficulty.Easy;
-            }
+            var clamped = Math.Max(0, Math.Min(index, LevelsPerGameType - 1));
+            var tier = Math.Min(DifficultyTiers - 1, clamped / LevelsPerDifficulty);
+            return (Difficulty)tier;
+        }
 
-            if (index < 8)
+        private static Color DifficultyColor(Difficulty difficulty)
+        {
+            switch (difficulty)
             {
-                return Difficulty.Normal;
+                case Difficulty.Easy:
+                    return Rgb(65, 150, 94);
+                case Difficulty.Normal:
+                    return Rgb(72, 116, 220);
+                case Difficulty.Hard:
+                    return Rgb(180, 125, 54);
+                case Difficulty.Expert:
+                    return Rgb(153, 86, 206);
+                case Difficulty.Master:
+                    return Rgb(196, 67, 82);
+                default:
+                    return Tile;
             }
-
-            if (index < 15)
-            {
-                return Difficulty.Hard;
-            }
-
-            if (index < 25)
-            {
-                return Difficulty.Expert;
-            }
-
-            return Difficulty.Master;
         }
 
         private static string PuzzleTitle(PuzzleType type)
@@ -884,6 +956,102 @@ namespace GroundZero.PuzzleCore
             public int CompletedLevels;
             public int CurrentStreak;
             public int BestStreak;
+            public int SlidingLevel;
+            public int MazeLevel;
+            public int SokobanLevel;
+            public int NonogramLevel;
+            public int LightsOutLevel;
+            public int Match3Level;
+            public int FlowLevel;
+            public int SudokuLevel;
+            public int MemoryLevel;
+            public int WaterSortLevel;
+
+            public int GetCampaignLevel(PuzzleType type)
+            {
+                switch (type)
+                {
+                    case PuzzleType.Sliding:
+                        return ClampCampaignLevel(SlidingLevel);
+                    case PuzzleType.Maze:
+                        return ClampCampaignLevel(MazeLevel);
+                    case PuzzleType.Sokoban:
+                        return ClampCampaignLevel(SokobanLevel);
+                    case PuzzleType.Nonogram:
+                        return ClampCampaignLevel(NonogramLevel);
+                    case PuzzleType.LightsOut:
+                        return ClampCampaignLevel(LightsOutLevel);
+                    case PuzzleType.Match3:
+                        return ClampCampaignLevel(Match3Level);
+                    case PuzzleType.Flow:
+                        return ClampCampaignLevel(FlowLevel);
+                    case PuzzleType.Sudoku:
+                        return ClampCampaignLevel(SudokuLevel);
+                    case PuzzleType.Memory:
+                        return ClampCampaignLevel(MemoryLevel);
+                    case PuzzleType.WaterSort:
+                        return ClampCampaignLevel(WaterSortLevel);
+                    default:
+                        return 0;
+                }
+            }
+
+            public void SetCampaignLevel(PuzzleType type, int level)
+            {
+                var clamped = ClampCampaignLevel(level);
+                switch (type)
+                {
+                    case PuzzleType.Sliding:
+                        SlidingLevel = clamped;
+                        break;
+                    case PuzzleType.Maze:
+                        MazeLevel = clamped;
+                        break;
+                    case PuzzleType.Sokoban:
+                        SokobanLevel = clamped;
+                        break;
+                    case PuzzleType.Nonogram:
+                        NonogramLevel = clamped;
+                        break;
+                    case PuzzleType.LightsOut:
+                        LightsOutLevel = clamped;
+                        break;
+                    case PuzzleType.Match3:
+                        Match3Level = clamped;
+                        break;
+                    case PuzzleType.Flow:
+                        FlowLevel = clamped;
+                        break;
+                    case PuzzleType.Sudoku:
+                        SudokuLevel = clamped;
+                        break;
+                    case PuzzleType.Memory:
+                        MemoryLevel = clamped;
+                        break;
+                    case PuzzleType.WaterSort:
+                        WaterSortLevel = clamped;
+                        break;
+                }
+            }
+
+            public int CompletedCampaignLevels()
+            {
+                return GetCampaignLevel(PuzzleType.Sliding)
+                    + GetCampaignLevel(PuzzleType.Maze)
+                    + GetCampaignLevel(PuzzleType.Sokoban)
+                    + GetCampaignLevel(PuzzleType.Nonogram)
+                    + GetCampaignLevel(PuzzleType.LightsOut)
+                    + GetCampaignLevel(PuzzleType.Match3)
+                    + GetCampaignLevel(PuzzleType.Flow)
+                    + GetCampaignLevel(PuzzleType.Sudoku)
+                    + GetCampaignLevel(PuzzleType.Memory)
+                    + GetCampaignLevel(PuzzleType.WaterSort);
+            }
+
+            private static int ClampCampaignLevel(int level)
+            {
+                return Math.Max(0, Math.Min(level, LevelsPerGameType));
+            }
         }
 
         private enum PuzzleType
