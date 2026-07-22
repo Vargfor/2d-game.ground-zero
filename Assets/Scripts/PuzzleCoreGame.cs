@@ -4,6 +4,7 @@ using System.Linq;
 using UnityEngine;
 using UnityEngine.EventSystems;
 using UnityEngine.InputSystem;
+using UnityEngine.InputSystem.Controls;
 using UnityEngine.InputSystem.UI;
 using UnityEngine.UI;
 
@@ -15,28 +16,34 @@ namespace GroundZero.PuzzleCore
         private const string SaveKey = "GroundZero.PuzzleCore.Save";
         private const int DailySeedOffset = 73471;
 
-        private static readonly Color Background = Rgb(15, 18, 24);
-        private static readonly Color Panel = Rgb(29, 34, 45);
-        private static readonly Color PanelSoft = Rgb(38, 45, 58);
-        private static readonly Color Tile = Rgb(54, 62, 78);
-        private static readonly Color TileDark = Rgb(21, 25, 33);
-        private static readonly Color TextMain = Rgb(238, 241, 245);
-        private static readonly Color TextMuted = Rgb(167, 176, 190);
-        private static readonly Color Success = Rgb(82, 196, 126);
-        private static readonly Color Warning = Rgb(238, 180, 79);
-        private static readonly Color Danger = Rgb(224, 90, 90);
+        private static readonly Color Background = Rgb(248, 249, 253);
+        private static readonly Color Panel = Rgb(255, 255, 255);
+        private static readonly Color PanelSoft = Rgb(242, 244, 248);
+        private static readonly Color Tile = Rgb(255, 255, 255);
+        private static readonly Color TileDark = Rgb(230, 232, 236);
+        private static readonly Color TextMain = Rgb(25, 28, 31);
+        private static readonly Color TextMuted = Rgb(69, 70, 78);
+        private static readonly Color Success = Rgb(0, 106, 99);
+        private static readonly Color Warning = Rgb(188, 162, 108);
+        private static readonly Color Danger = Rgb(186, 26, 26);
+        private static readonly Color Accent = Rgb(24, 36, 66);
+        private static readonly Color AccentAlt = Rgb(0, 106, 99);
+        private static readonly Color Stroke = Rgb(198, 198, 206);
+        private static readonly Color PrimaryContainer = Rgb(218, 226, 255);
+        private static readonly Color SecondaryContainer = Rgb(139, 241, 230);
+        private static readonly Color SurfaceVariant = Rgb(224, 226, 230);
 
         private static readonly Color[] Palette =
         {
-            Rgb(229, 81, 94),
-            Rgb(78, 166, 255),
-            Rgb(92, 204, 139),
-            Rgb(244, 190, 78),
-            Rgb(171, 117, 255),
-            Rgb(56, 210, 204),
-            Rgb(246, 132, 77),
-            Rgb(235, 110, 184),
-            Rgb(142, 218, 92)
+            Rgb(24, 36, 66),
+            Rgb(0, 106, 99),
+            Rgb(188, 162, 108),
+            Rgb(82, 94, 127),
+            Rgb(58, 70, 102),
+            Rgb(0, 80, 74),
+            Rgb(223, 195, 139),
+            Rgb(113, 215, 205),
+            Rgb(186, 26, 26)
         };
 
         private static readonly Vector2Int GridUp = new Vector2Int(0, -1);
@@ -60,6 +67,9 @@ namespace GroundZero.PuzzleCore
 
         private Font defaultFont;
         private RectTransform root;
+        private Sprite panelSprite;
+        private Sprite buttonSprite;
+        private Sprite tileSprite;
         private SaveData save;
         private IPuzzle activePuzzle;
         private int masterSeed;
@@ -91,11 +101,10 @@ namespace GroundZero.PuzzleCore
             }
 
             DontDestroyOnLoad(gameObject);
-            defaultFont = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
-            if (defaultFont == null)
-            {
-                defaultFont = Resources.GetBuiltinResource<Font>("Arial.ttf");
-            }
+            defaultFont = LoadDefaultFont();
+            panelSprite = CreateRoundedSprite(8);
+            buttonSprite = CreateRoundedSprite(8);
+            tileSprite = CreateRoundedSprite(5);
 
             save = LoadSave();
             BuildCanvas();
@@ -106,30 +115,25 @@ namespace GroundZero.PuzzleCore
         {
             ConfigureAllEventSystems();
 
-            if (!runActive || activePuzzle == null || levelSolved)
-            {
-                return;
-            }
-
-            if (!TryReadPuzzleKey(out var key))
-            {
-                return;
-            }
-
-            if (key == KeyCode.Escape)
+            if (WasMenuPressed())
             {
                 ShowMainMenu();
                 return;
             }
 
-            if (key == KeyCode.R)
+            if (!runActive || activePuzzle == null || levelSolved)
+            {
+                return;
+            }
+
+            if (WasResetPressed())
             {
                 activePuzzle.Reset();
                 RenderGame();
                 return;
             }
 
-            if (activePuzzle.HandleKey(key))
+            if (TryReadMoveInput(out var direction) && activePuzzle.HandleKey(KeyFromDirection(direction)))
             {
                 AfterPuzzleChanged();
             }
@@ -162,6 +166,7 @@ namespace GroundZero.PuzzleCore
 
             var image = canvasObject.AddComponent<Image>();
             image.color = Background;
+            image.raycastTarget = false;
         }
 
         private void ShowMainMenu()
@@ -171,48 +176,42 @@ namespace GroundZero.PuzzleCore
             activePuzzle = null;
             Clear(root);
 
-            var page = Stack(root, "Main Menu", 34, TextAnchor.UpperCenter);
-            page.padding = new RectOffset(80, 80, 72, 72);
+            var page = Stack(root, "LogicMind Home", 20, TextAnchor.UpperCenter);
+            page.padding = new RectOffset(80, 80, 34, 34);
 
-            Label(page.transform, "Puzzle Core: Ground Zero", 58, FontStyle.Bold, TextAnchor.MiddleCenter, TextMain, 84);
-            Label(page.transform, "Endless verified puzzle runs for desktop and Steam.", 24, FontStyle.Normal, TextAnchor.MiddleCenter, TextMuted, 42);
+            AddTopAppBar(page.transform, "LogicMind", "Menu", ShowPuzzleLab, "Settings", ShowPuzzleLab);
 
-            var stats = PanelBox(page.transform, "Stats", PanelSoft);
-            var statsStack = Stack(stats, "Stats Stack", 12, TextAnchor.MiddleCenter);
-            statsStack.padding = new RectOffset(28, 28, 22, 22);
-            var saveSummary = save.HasRun
-                ? "Saved run: level " + (save.LevelIndex + 1) + " / seed " + save.MasterSeed
-                : "No active endless run yet";
-            Label(statsStack.transform, saveSummary, 24, FontStyle.Bold, TextAnchor.MiddleCenter, TextMain, 34);
-            Label(statsStack.transform, "Solved total: " + save.CompletedLevels + "    Best streak: " + save.BestStreak, 20, FontStyle.Normal, TextAnchor.MiddleCenter, TextMuted, 30);
-            AddLayout(stats, -1, 118);
+            var hero = PanelBox(page.transform, "Hero", PrimaryContainer);
+            AddLayout(hero, -1, 210);
+            var heroStack = Stack(hero, "Hero Copy", 8, TextAnchor.MiddleCenter);
+            heroStack.padding = new RectOffset(36, 36, 28, 24);
+            Label(heroStack.transform, "Puzzle Core", 54, FontStyle.Bold, TextAnchor.MiddleCenter, Accent, 66);
+            Label(heroStack.transform, "Ground Zero", 23, FontStyle.Bold, TextAnchor.MiddleCenter, TextMuted, 34);
+            Label(heroStack.transform, "Sharpen your analytical focus with minimal distractions.", 21, FontStyle.Normal, TextAnchor.MiddleCenter, TextMuted, 44);
 
-            var buttons = Stack(page.transform, "Menu Buttons", 14, TextAnchor.MiddleCenter);
-            buttons.padding = new RectOffset(580, 580, 0, 0);
+            var stats = Grid(page.transform, "Stats Bento", 2, 1, 380, 124, 2);
+            StatTile(stats, "Puzzles Solved", save.CompletedLevels.ToString(), Accent);
+            StatTile(stats, "Best Streak", save.BestStreak.ToString(), AccentAlt);
+
+            var buttons = Stack(page.transform, "Primary Actions", 14, TextAnchor.MiddleCenter);
+            buttons.padding = new RectOffset(520, 520, 0, 0);
+
+            Button(buttons.transform, "Play Now", StartNewRun, Accent, Color.white, 24, 68);
+            Button(buttons.transform, "Daily Challenge    NEW", StartDailyRun, Panel, Accent, 22, 64);
+            Button(buttons.transform, "Level Select", ShowPuzzleLab, PanelSoft, TextMuted, 21, 62);
 
             if (save.HasRun)
             {
-                Button(buttons.transform, "Continue Endless Run", ContinueRun, Success, TextMain, 24, 64);
+                Button(buttons.transform, "Continue Endless Run", ContinueRun, SecondaryContainer, Accent, 21, 62);
             }
 
-            Button(buttons.transform, "New Endless Run", () =>
+            if (Application.platform != RuntimePlatform.IPhonePlayer &&
+                Application.platform != RuntimePlatform.Android)
             {
-                var seed = unchecked((int)(DateTime.UtcNow.Ticks & 0x7fffffff));
-                StartRun(seed, 0);
-            }, Rgb(72, 116, 220), TextMain, 24, 64);
+                Button(buttons.transform, "Quit", Application.Quit, SurfaceVariant, TextMuted, 19, 56);
+            }
 
-            Button(buttons.transform, "Daily Run", () =>
-            {
-                var today = DateTime.UtcNow.Date;
-                var seed = today.Year * 10000 + today.Month * 100 + today.Day + DailySeedOffset;
-                StartRun(seed, 0);
-            }, Rgb(102, 80, 188), TextMain, 24, 64);
-
-            Button(buttons.transform, "Puzzle Lab", ShowPuzzleLab, PanelSoft, TextMain, 24, 64);
-            Button(buttons.transform, "Quit", Application.Quit, TileDark, TextMuted, 22, 56);
-
-            var footer = Label(page.transform, "Keyboard: WASD/arrows where movement applies, R resets, Esc returns to menu.", 18, FontStyle.Normal, TextAnchor.LowerCenter, TextMuted, 42);
-            footer.resizeTextForBestFit = true;
+            AddBottomNav(page.transform, 0);
         }
 
         private void ShowPuzzleLab()
@@ -222,17 +221,34 @@ namespace GroundZero.PuzzleCore
             activePuzzle = null;
             Clear(root);
 
-            var page = Stack(root, "Puzzle Lab", 24, TextAnchor.UpperCenter);
-            page.padding = new RectOffset(72, 72, 56, 56);
-            Label(page.transform, "Puzzle Lab", 46, FontStyle.Bold, TextAnchor.MiddleCenter, TextMain, 70);
-            Label(page.transform, "Start a single generated puzzle at any difficulty.", 22, FontStyle.Normal, TextAnchor.MiddleCenter, TextMuted, 38);
+            var page = Stack(root, "Level Select", 14, TextAnchor.UpperCenter);
+            page.padding = new RectOffset(72, 72, 34, 34);
+
+            AddTopAppBar(page.transform, "LogicMind", "Back", ShowMainMenu, "Settings", ShowMainMenu);
+
+            var chips = Row(page.transform, "Difficulty Chips", 10, TextAnchor.MiddleCenter);
+            chips.padding = new RectOffset(0, 0, 0, 0);
+            AddLayout(chips.GetComponent<RectTransform>(), -1, 58);
+            foreach (Difficulty difficulty in Enum.GetValues(typeof(Difficulty)))
+            {
+                Button(chips.transform, DifficultyLabel(difficulty), () => { }, difficulty == Difficulty.Easy ? Accent : PanelSoft, difficulty == Difficulty.Easy ? Color.white : TextMuted, 17, 46, 150);
+            }
+
+            var progress = PanelBox(page.transform, "Progress Header", Panel);
+            AddLayout(progress, -1, 112);
+            var progressStack = Stack(progress, "Progress Copy", 4, TextAnchor.MiddleLeft);
+            progressStack.padding = new RectOffset(26, 26, 18, 16);
+            Label(progressStack.transform, "Chapter 1", 16, FontStyle.Bold, TextAnchor.MiddleLeft, TextMuted, 24);
+            Label(progressStack.transform, "Basic Deduction", 26, FontStyle.Bold, TextAnchor.MiddleLeft, Accent, 34);
+            Label(progressStack.transform, "Solved total: " + save.CompletedLevels + "    Best streak: " + save.BestStreak, 18, FontStyle.Normal, TextAnchor.MiddleLeft, AccentAlt, 28);
 
             foreach (Difficulty difficulty in Enum.GetValues(typeof(Difficulty)))
             {
-                var rowPanel = PanelBox(page.transform, difficulty.ToString(), Panel);
+                var rowPanel = PanelBox(page.transform, DifficultyLabel(difficulty), Panel);
+                AddLayout(rowPanel, -1, 78);
                 var row = Row(rowPanel, "Row", 10, TextAnchor.MiddleCenter);
                 row.padding = new RectOffset(12, 12, 10, 10);
-                Label(row.transform, difficulty.ToString(), 20, FontStyle.Bold, TextAnchor.MiddleCenter, TextMain, 160, 52);
+                Label(row.transform, DifficultyLabel(difficulty), 20, FontStyle.Bold, TextAnchor.MiddleCenter, Accent, 150, 52);
 
                 foreach (PuzzleType type in rotation)
                 {
@@ -247,13 +263,24 @@ namespace GroundZero.PuzzleCore
                         runActive = true;
                         endlessMode = false;
                         RenderGame();
-                    }, Tile, TextMain, 16, 52, 140);
+                    }, Tile, TextMain, 16, 52, 132);
                 }
-
-                AddLayout(rowPanel, -1, 74);
             }
 
-            Button(page.transform, "Back", ShowMainMenu, TileDark, TextMuted, 22, 58, 280);
+            AddBottomNav(page.transform, 0);
+        }
+
+        private void StartNewRun()
+        {
+            var seed = unchecked((int)(DateTime.UtcNow.Ticks & 0x7fffffff));
+            StartRun(seed, 0);
+        }
+
+        private void StartDailyRun()
+        {
+            var today = DateTime.UtcNow.Date;
+            var seed = today.Year * 10000 + today.Month * 100 + today.Day + DailySeedOffset;
+            StartRun(seed, 0);
         }
 
         private void ContinueRun()
@@ -323,73 +350,86 @@ namespace GroundZero.PuzzleCore
         {
             Clear(root);
 
-            var page = Stack(root, "Game", 18, TextAnchor.UpperCenter);
-            page.padding = new RectOffset(42, 42, 34, 30);
-
-            var header = Row(page.transform, "Header", 12, TextAnchor.MiddleLeft);
-            header.padding = new RectOffset(22, 22, 14, 14);
-            header.GetComponent<Image>().color = Panel;
-            AddLayout(header.GetComponent<RectTransform>(), -1, 92);
-
-            var titleStack = Stack(header.transform, "Header Copy", 2, TextAnchor.MiddleLeft);
-            AddLayout(titleStack.GetComponent<RectTransform>(), 900, 68, 1);
-            Label(titleStack.transform, activePuzzle.Title, 30, FontStyle.Bold, TextAnchor.MiddleLeft, TextMain, 38);
-            Label(titleStack.transform, activePuzzle.Objective, 17, FontStyle.Normal, TextAnchor.MiddleLeft, TextMuted, 28);
-
-            var meta = endlessMode
-                ? "Level " + (levelIndex + 1) + " / " + activePuzzle.Difficulty + " / seed " + masterSeed
-                : activePuzzle.Difficulty + " lab seed";
-            Label(header.transform, meta, 19, FontStyle.Normal, TextAnchor.MiddleRight, TextMuted, 440, 52);
-
             var movesText = activePuzzle is Match3Puzzle match3
                 ? "Score " + match3.Score + "/" + match3.TargetScore + "    Moves left " + match3.MovesLeft
                 : "Moves " + activePuzzle.Moves;
-            Label(header.transform, movesText, 19, FontStyle.Bold, TextAnchor.MiddleRight, TextMain, 310, 52);
+
+            var page = Stack(root, "Game", 14, TextAnchor.UpperCenter);
+            page.padding = new RectOffset(64, 64, 34, 34);
+
+            AddTopAppBar(page.transform, "LogicMind", "Menu", ShowMainMenu, "Reset", () =>
+            {
+                activePuzzle.Reset();
+                levelSolved = false;
+                RenderGame();
+            });
+
+            var status = Row(page.transform, "Game Status", 18, TextAnchor.MiddleCenter);
+            status.padding = new RectOffset(18, 18, 14, 14);
+            AddLayout(status.GetComponent<RectTransform>(), -1, 86);
+
+            var levelCopy = Stack(status.transform, "Level Copy", 2, TextAnchor.MiddleLeft);
+            AddLayout(levelCopy.GetComponent<RectTransform>(), 680, 58, 1);
+            Label(levelCopy.transform, endlessMode ? "Current Level" : "Selected Puzzle", 14, FontStyle.Bold, TextAnchor.MiddleLeft, TextMuted, 22);
+            Label(levelCopy.transform, endlessMode ? "Level " + (levelIndex + 1) : activePuzzle.Title, 27, FontStyle.Bold, TextAnchor.MiddleLeft, Accent, 36);
+
+            var metricCopy = Stack(status.transform, "Metric Copy", 2, TextAnchor.MiddleRight);
+            AddLayout(metricCopy.GetComponent<RectTransform>(), 420, 58);
+            Label(metricCopy.transform, DifficultyLabel(activePuzzle.Difficulty), 14, FontStyle.Bold, TextAnchor.MiddleRight, TextMuted, 22);
+            Label(metricCopy.transform, movesText, 24, FontStyle.Bold, TextAnchor.MiddleRight, Accent, 36);
+
+            var objective = Label(page.transform, activePuzzle.Objective, 18, FontStyle.Normal, TextAnchor.MiddleCenter, TextMuted, -1, 32);
+            objective.resizeTextForBestFit = true;
 
             var content = Stack(page.transform, "Content", 16, TextAnchor.UpperCenter);
             content.padding = new RectOffset(18, 18, 18, 18);
-            content.GetComponent<Image>().color = PanelSoft;
-            AddLayout(content.GetComponent<RectTransform>(), -1, 760, 1);
+            StylePanel(content.GetComponent<RectTransform>(), SurfaceVariant);
+            AddLayout(content.GetComponent<RectTransform>(), -1, 690, 1);
             activePuzzle.Render(this, content.transform);
 
             if (activePuzzle.IsSolved)
             {
                 levelSolved = true;
-                var solved = Row(content.transform, "Solved", 12, TextAnchor.MiddleCenter);
-                solved.padding = new RectOffset(20, 20, 12, 12);
-                solved.GetComponent<Image>().color = Rgb(35, 74, 50);
-                AddLayout(solved.GetComponent<RectTransform>(), -1, 74);
-                Label(solved.transform, "Verified clear. The level is complete.", 23, FontStyle.Bold, TextAnchor.MiddleCenter, TextMain, 520, 48);
+                var solved = Stack(content.transform, "Solved", 10, TextAnchor.MiddleCenter);
+                solved.padding = new RectOffset(22, 22, 18, 18);
+                StylePanel(solved.GetComponent<RectTransform>(), Panel);
+                AddLayout(solved.GetComponent<RectTransform>(), -1, 190);
+                Label(solved.transform, "Level Complete", 30, FontStyle.Bold, TextAnchor.MiddleCenter, Accent, 42);
+                Label(solved.transform, movesText, 19, FontStyle.Bold, TextAnchor.MiddleCenter, AccentAlt, 30);
+                Label(solved.transform, "Verified clear. Your logic chain is complete.", 17, FontStyle.Normal, TextAnchor.MiddleCenter, TextMuted, 32);
                 if (endlessMode)
                 {
-                    Button(solved.transform, "Next Level", CompleteAndAdvance, Success, TextMain, 22, 50, 220);
+                    Button(solved.transform, "Next Level", CompleteAndAdvance, Accent, Color.white, 21, 56, 280);
+                }
+                else
+                {
+                    Button(solved.transform, "Back to Level Select", ShowPuzzleLab, Accent, Color.white, 21, 56, 320);
                 }
             }
             else if (activePuzzle.IsFailed)
             {
-                var failed = Row(content.transform, "Failed", 12, TextAnchor.MiddleCenter);
-                failed.padding = new RectOffset(20, 20, 12, 12);
-                failed.GetComponent<Image>().color = Rgb(86, 45, 45);
-                AddLayout(failed.GetComponent<RectTransform>(), -1, 74);
-                Label(failed.transform, "Run failed. Reset this puzzle or skip to another seed.", 22, FontStyle.Bold, TextAnchor.MiddleCenter, TextMain, 620, 48);
+                var failed = Stack(content.transform, "Failed", 10, TextAnchor.MiddleCenter);
+                failed.padding = new RectOffset(22, 22, 18, 18);
+                StylePanel(failed.GetComponent<RectTransform>(), Panel);
+                AddLayout(failed.GetComponent<RectTransform>(), -1, 152);
+                Label(failed.transform, "Run Failed", 28, FontStyle.Bold, TextAnchor.MiddleCenter, Danger, 40);
+                Label(failed.transform, "Reset this puzzle or skip to another seed.", 17, FontStyle.Normal, TextAnchor.MiddleCenter, TextMuted, 30);
                 Button(failed.transform, "Reset Puzzle", () =>
                 {
                     activePuzzle.Reset();
                     RenderGame();
-                }, Warning, TextMain, 22, 50, 220);
+                }, SecondaryContainer, Accent, 21, 56, 280);
             }
 
-            var footer = Row(page.transform, "Footer", 14, TextAnchor.MiddleCenter);
-            footer.padding = new RectOffset(18, 18, 10, 10);
-            footer.GetComponent<Image>().color = Panel;
-            AddLayout(footer.GetComponent<RectTransform>(), -1, 80);
-            Button(footer.transform, "Menu", ShowMainMenu, TileDark, TextMuted, 20, 54, 180);
+            var actionCount = endlessMode && activePuzzle.IsSolved ? 4 : 3;
+            var footer = Grid(page.transform, "Game Actions", actionCount, 1, actionCount == 4 ? 260 : 350, 58, 12);
+            Button(footer, "Menu", ShowMainMenu, Panel, TextMuted, 19, -1, -1);
             Button(footer.transform, "Reset", () =>
             {
                 activePuzzle.Reset();
                 levelSolved = false;
                 RenderGame();
-            }, Tile, TextMain, 20, 54, 180);
+            }, Panel, Accent, 19, -1, -1);
             Button(footer.transform, "Skip", () =>
             {
                 if (endlessMode)
@@ -403,10 +443,10 @@ namespace GroundZero.PuzzleCore
                 {
                     ShowPuzzleLab();
                 }
-            }, Tile, TextMain, 20, 54, 180);
+            }, Panel, Accent, 19, -1, -1);
             if (endlessMode && activePuzzle.IsSolved)
             {
-                Button(footer.transform, "Next", CompleteAndAdvance, Success, TextMain, 20, 54, 180);
+                Button(footer.transform, "Next", CompleteAndAdvance, Accent, Color.white, 19, -1, -1);
             }
         }
 
@@ -464,6 +504,47 @@ namespace GroundZero.PuzzleCore
             PlayerPrefs.Save();
         }
 
+        private void AddTopAppBar(Transform parent, string title, string leftLabel, Action leftAction, string rightLabel, Action rightAction)
+        {
+            var bar = Row(parent, "Top App Bar", 12, TextAnchor.MiddleCenter);
+            bar.padding = new RectOffset(14, 14, 8, 8);
+            var rect = bar.GetComponent<RectTransform>();
+            StylePanel(rect, Panel);
+            AddLayout(rect, -1, 60);
+
+            Button(bar.transform, leftLabel, leftAction, PanelSoft, Accent, 16, 44, 130);
+            var titleText = Label(bar.transform, title, 25, FontStyle.Bold, TextAnchor.MiddleLeft, Accent, -1, 44);
+            titleText.GetComponent<LayoutElement>().flexibleWidth = 1;
+            Button(bar.transform, rightLabel, rightAction, PanelSoft, Accent, 16, 44, 150);
+        }
+
+        private void AddBottomNav(Transform parent, int activeIndex)
+        {
+            var nav = Row(parent, "Bottom Nav", 8, TextAnchor.MiddleCenter);
+            nav.padding = new RectOffset(12, 12, 8, 8);
+            var rect = nav.GetComponent<RectTransform>();
+            StylePanel(rect, Panel);
+            AddLayout(rect, -1, 64);
+
+            AddNavButton(nav.transform, "Puzzles", ShowPuzzleLab, activeIndex == 0);
+            AddNavButton(nav.transform, "Daily", StartDailyRun, activeIndex == 1);
+            AddNavButton(nav.transform, "Stats", ShowMainMenu, activeIndex == 2);
+        }
+
+        private void AddNavButton(Transform parent, string text, Action action, bool active)
+        {
+            Button(parent, text, action, active ? PrimaryContainer : Panel, active ? Accent : TextMuted, 15, 46, 190);
+        }
+
+        private void StatTile(Transform parent, string label, string value, Color valueColor)
+        {
+            var card = PanelBox(parent, label, Panel);
+            var stack = Stack(card, label + " Stack", 4, TextAnchor.MiddleCenter);
+            stack.padding = new RectOffset(14, 14, 16, 14);
+            Label(stack.transform, label.ToUpperInvariant(), 13, FontStyle.Bold, TextAnchor.MiddleCenter, TextMuted, 22);
+            Label(stack.transform, value, 34, FontStyle.Bold, TextAnchor.MiddleCenter, valueColor, 46);
+        }
+
         internal VerticalLayoutGroup Stack(Transform parent, string name, int spacing, TextAnchor alignment)
         {
             var panel = PanelBox(parent, name, Color.clear);
@@ -495,9 +576,28 @@ namespace GroundZero.PuzzleCore
             var go = new GameObject(name, typeof(RectTransform), typeof(Image));
             go.transform.SetParent(parent, false);
             var rect = go.GetComponent<RectTransform>();
-            var image = go.GetComponent<Image>();
-            image.color = color;
+            Stretch(rect);
+            StylePanel(rect, color);
             return rect;
+        }
+
+        internal void StylePanel(RectTransform rect, Color color)
+        {
+            var image = rect.GetComponent<Image>() ?? rect.gameObject.AddComponent<Image>();
+            image.color = color;
+            image.sprite = panelSprite;
+            image.type = Image.Type.Sliced;
+            image.raycastTarget = color.a > 0.001f;
+
+            var outline = rect.GetComponent<Outline>();
+            if (color.a > 0.001f)
+            {
+                ApplyOutline(rect.gameObject, Stroke, 0.42f);
+            }
+            else if (outline != null)
+            {
+                outline.enabled = false;
+            }
         }
 
         internal Text Label(Transform parent, string text, int size, FontStyle style, TextAnchor anchor, Color color, float minHeight)
@@ -529,16 +629,27 @@ namespace GroundZero.PuzzleCore
             go.transform.SetParent(parent, false);
             var image = go.GetComponent<Image>();
             image.color = background;
+            image.sprite = height < 0 && preferredWidth < 0 ? tileSprite : buttonSprite;
+            image.type = Image.Type.Sliced;
             var button = go.GetComponent<Button>();
             button.targetGraphic = image;
-            button.onClick.AddListener(() => onClick?.Invoke());
+            if (onClick != null)
+            {
+                button.onClick.AddListener(() => onClick.Invoke());
+            }
+            else
+            {
+                button.interactable = false;
+            }
             var colors = button.colors;
             colors.normalColor = background;
-            colors.highlightedColor = Lighten(background, 0.12f);
-            colors.pressedColor = Darken(background, 0.12f);
-            colors.selectedColor = Lighten(background, 0.08f);
-            colors.disabledColor = Darken(background, 0.2f);
+            colors.highlightedColor = Lighten(background, 0.09f);
+            colors.pressedColor = Darken(background, 0.18f);
+            colors.selectedColor = Lighten(background, 0.07f);
+            colors.disabledColor = Darken(background, 0.32f);
+            colors.fadeDuration = 0.08f;
             button.colors = colors;
+            ApplyOutline(go, Stroke, 0.55f);
 
             var textObject = new GameObject("Text", typeof(RectTransform), typeof(Text));
             textObject.transform.SetParent(go.transform, false);
@@ -562,17 +673,61 @@ namespace GroundZero.PuzzleCore
             return button;
         }
 
+        internal void AddCellWall(RectTransform parent, int directionIndex, Color color, float thickness = 4f)
+        {
+            var go = new GameObject("Wall", typeof(RectTransform), typeof(Image));
+            go.transform.SetParent(parent, false);
+            var rect = go.GetComponent<RectTransform>();
+            var image = go.GetComponent<Image>();
+            image.color = color;
+            image.raycastTarget = false;
+
+            if (directionIndex == 0)
+            {
+                rect.anchorMin = new Vector2(0f, 1f);
+                rect.anchorMax = Vector2.one;
+                rect.offsetMin = new Vector2(0f, -thickness);
+                rect.offsetMax = Vector2.zero;
+            }
+            else if (directionIndex == 1)
+            {
+                rect.anchorMin = new Vector2(1f, 0f);
+                rect.anchorMax = Vector2.one;
+                rect.offsetMin = new Vector2(-thickness, 0f);
+                rect.offsetMax = Vector2.zero;
+            }
+            else if (directionIndex == 2)
+            {
+                rect.anchorMin = Vector2.zero;
+                rect.anchorMax = new Vector2(1f, 0f);
+                rect.offsetMin = Vector2.zero;
+                rect.offsetMax = new Vector2(0f, thickness);
+            }
+            else
+            {
+                rect.anchorMin = Vector2.zero;
+                rect.anchorMax = new Vector2(0f, 1f);
+                rect.offsetMin = Vector2.zero;
+                rect.offsetMax = new Vector2(thickness, 0f);
+            }
+        }
+
         internal RectTransform Grid(Transform parent, string name, int columns, int rows, float cellSize, float spacing = 6)
+        {
+            return Grid(parent, name, columns, rows, cellSize, cellSize, spacing);
+        }
+
+        internal RectTransform Grid(Transform parent, string name, int columns, int rows, float cellWidth, float cellHeight, float spacing = 6)
         {
             var grid = PanelBox(parent, name, Color.clear);
             var layout = grid.gameObject.AddComponent<GridLayoutGroup>();
             layout.constraint = GridLayoutGroup.Constraint.FixedColumnCount;
             layout.constraintCount = columns;
-            layout.cellSize = new Vector2(cellSize, cellSize);
+            layout.cellSize = new Vector2(cellWidth, cellHeight);
             layout.spacing = new Vector2(spacing, spacing);
             layout.childAlignment = TextAnchor.MiddleCenter;
-            var width = columns * cellSize + Math.Max(0, columns - 1) * spacing;
-            var height = rows * cellSize + Math.Max(0, rows - 1) * spacing;
+            var width = columns * cellWidth + Math.Max(0, columns - 1) * spacing;
+            var height = rows * cellHeight + Math.Max(0, rows - 1) * spacing;
             AddLayout(grid, width, height);
             return grid;
         }
@@ -642,6 +797,85 @@ namespace GroundZero.PuzzleCore
             layout.flexibleWidth = flexibleWidth;
         }
 
+        private static Font LoadDefaultFont()
+        {
+            var font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
+            if (font != null)
+            {
+                return font;
+            }
+
+            font = Resources.GetBuiltinResource<Font>("Arial.ttf");
+            if (font != null)
+            {
+                return font;
+            }
+
+            return Font.CreateDynamicFontFromOSFont("Arial", 16);
+        }
+
+        private static Sprite CreateRoundedSprite(int radius)
+        {
+            const int size = 32;
+            var texture = new Texture2D(size, size, TextureFormat.RGBA32, false)
+            {
+                hideFlags = HideFlags.HideAndDontSave,
+                filterMode = FilterMode.Point,
+                wrapMode = TextureWrapMode.Clamp
+            };
+
+            var clear = new Color32(255, 255, 255, 0);
+            var solid = new Color32(255, 255, 255, 255);
+            var pixels = new Color32[size * size];
+            for (var y = 0; y < size; y++)
+            {
+                for (var x = 0; x < size; x++)
+                {
+                    pixels[y * size + x] = IsInsideRoundedRect(x + 0.5f, y + 0.5f, size, radius) ? solid : clear;
+                }
+            }
+
+            texture.SetPixels32(pixels);
+            texture.Apply();
+
+            var border = radius + 2;
+            var sprite = Sprite.Create(
+                texture,
+                new Rect(0, 0, size, size),
+                new Vector2(0.5f, 0.5f),
+                100f,
+                0,
+                SpriteMeshType.FullRect,
+                new Vector4(border, border, border, border));
+            sprite.hideFlags = HideFlags.HideAndDontSave;
+            return sprite;
+        }
+
+        private static bool IsInsideRoundedRect(float x, float y, int size, int radius)
+        {
+            if (radius <= 0)
+            {
+                return true;
+            }
+
+            var min = radius;
+            var max = size - radius;
+            var closestX = Mathf.Clamp(x, min, max);
+            var closestY = Mathf.Clamp(y, min, max);
+            var dx = x - closestX;
+            var dy = y - closestY;
+            return dx * dx + dy * dy <= radius * radius + 0.5f;
+        }
+
+        private static void ApplyOutline(GameObject target, Color color, float alpha)
+        {
+            var outline = target.GetComponent<Outline>() ?? target.AddComponent<Outline>();
+            outline.effectColor = WithAlpha(color, alpha);
+            outline.effectDistance = new Vector2(1f, -1f);
+            outline.useGraphicAlpha = false;
+            outline.enabled = true;
+        }
+
         private static Difficulty DifficultyForLevel(int index)
         {
             if (index < 3)
@@ -696,6 +930,25 @@ namespace GroundZero.PuzzleCore
             }
         }
 
+        private static string DifficultyLabel(Difficulty difficulty)
+        {
+            switch (difficulty)
+            {
+                case Difficulty.Easy:
+                    return "Easy";
+                case Difficulty.Normal:
+                    return "Medium";
+                case Difficulty.Hard:
+                    return "Hard";
+                case Difficulty.Expert:
+                    return "Expert";
+                case Difficulty.Master:
+                    return "Master";
+                default:
+                    return difficulty.ToString();
+            }
+        }
+
         private static int Hash(int a, int b)
         {
             unchecked
@@ -735,6 +988,12 @@ namespace GroundZero.PuzzleCore
             return Color.Lerp(color, Color.black, amount);
         }
 
+        private static Color WithAlpha(Color color, float alpha)
+        {
+            color.a = alpha;
+            return color;
+        }
+
         private static bool DirectionFromKey(KeyCode key, out Vector2Int direction)
         {
             if (key == KeyCode.UpArrow || key == KeyCode.W)
@@ -765,77 +1024,109 @@ namespace GroundZero.PuzzleCore
             return false;
         }
 
-        private static bool TryReadPuzzleKey(out KeyCode key)
+        private static KeyCode KeyFromDirection(Vector2Int direction)
+        {
+            if (direction == GridUp)
+            {
+                return KeyCode.UpArrow;
+            }
+
+            if (direction == GridDown)
+            {
+                return KeyCode.DownArrow;
+            }
+
+            if (direction == GridLeft)
+            {
+                return KeyCode.LeftArrow;
+            }
+
+            return KeyCode.RightArrow;
+        }
+
+        private static bool WasMenuPressed()
         {
             var keyboard = Keyboard.current;
-            key = KeyCode.None;
-
-            if (keyboard == null)
+            if (WasPressed(keyboard?.escapeKey))
             {
-                return false;
-            }
-
-            if (keyboard.upArrowKey.wasPressedThisFrame)
-            {
-                key = KeyCode.UpArrow;
                 return true;
             }
 
-            if (keyboard.wKey.wasPressedThisFrame)
+            var gamepad = Gamepad.current;
+            return WasPressed(gamepad?.startButton) || WasPressed(gamepad?.selectButton);
+        }
+
+        private static bool WasResetPressed()
+        {
+            var keyboard = Keyboard.current;
+            if (WasPressed(keyboard?.rKey))
             {
-                key = KeyCode.W;
                 return true;
             }
 
-            if (keyboard.downArrowKey.wasPressedThisFrame)
+            var gamepad = Gamepad.current;
+            return WasPressed(gamepad?.buttonNorth) || WasPressed(gamepad?.rightShoulder);
+        }
+
+        private static bool TryReadMoveInput(out Vector2Int direction)
+        {
+            var keyboard = Keyboard.current;
+            if (WasPressed(keyboard?.upArrowKey) || WasPressed(keyboard?.wKey))
             {
-                key = KeyCode.DownArrow;
+                direction = GridUp;
                 return true;
             }
 
-            if (keyboard.sKey.wasPressedThisFrame)
+            if (WasPressed(keyboard?.downArrowKey) || WasPressed(keyboard?.sKey))
             {
-                key = KeyCode.S;
+                direction = GridDown;
                 return true;
             }
 
-            if (keyboard.leftArrowKey.wasPressedThisFrame)
+            if (WasPressed(keyboard?.leftArrowKey) || WasPressed(keyboard?.aKey))
             {
-                key = KeyCode.LeftArrow;
+                direction = GridLeft;
                 return true;
             }
 
-            if (keyboard.aKey.wasPressedThisFrame)
+            if (WasPressed(keyboard?.rightArrowKey) || WasPressed(keyboard?.dKey))
             {
-                key = KeyCode.A;
+                direction = GridRight;
                 return true;
             }
 
-            if (keyboard.rightArrowKey.wasPressedThisFrame)
+            var gamepad = Gamepad.current;
+            if (WasPressed(gamepad?.dpad.up) || WasPressed(gamepad?.leftStick.up))
             {
-                key = KeyCode.RightArrow;
+                direction = GridUp;
                 return true;
             }
 
-            if (keyboard.dKey.wasPressedThisFrame)
+            if (WasPressed(gamepad?.dpad.down) || WasPressed(gamepad?.leftStick.down))
             {
-                key = KeyCode.D;
+                direction = GridDown;
                 return true;
             }
 
-            if (keyboard.rKey.wasPressedThisFrame)
+            if (WasPressed(gamepad?.dpad.left) || WasPressed(gamepad?.leftStick.left))
             {
-                key = KeyCode.R;
+                direction = GridLeft;
                 return true;
             }
 
-            if (keyboard.escapeKey.wasPressedThisFrame)
+            if (WasPressed(gamepad?.dpad.right) || WasPressed(gamepad?.leftStick.right))
             {
-                key = KeyCode.Escape;
+                direction = GridRight;
                 return true;
             }
 
+            direction = Vector2Int.zero;
             return false;
+        }
+
+        private static bool WasPressed(ButtonControl control)
+        {
+            return control != null && control.wasPressedThisFrame;
         }
 
         private static void ConfigureAllEventSystems()
@@ -1262,7 +1553,15 @@ namespace GroundZero.PuzzleCore
                         var isExit = x == size - 1 && y == size - 1;
                         var label = isPlayer ? "P" : isExit ? "X" : "";
                         var color = isPlayer ? Success : isExit ? Warning : Tile;
-                        ui.TileButton(grid, label, () => TryStepToward(position), color, isPlayer ? Color.black : TextMain, 20);
+                        var button = ui.Button(grid, label, () => ui.PuzzleAction(() => TryStepToward(position)), color, isPlayer ? Color.black : TextMain, 20, -1, -1);
+                        var cell = button.GetComponent<RectTransform>();
+                        for (var d = 0; d < 4; d++)
+                        {
+                            if (walls[x, y, d])
+                            {
+                                ui.AddCellWall(cell, d, Stroke, 4f);
+                            }
+                        }
                     }
                 }
 
@@ -1440,17 +1739,17 @@ namespace GroundZero.PuzzleCore
 
             private void Flip(int index)
             {
-                if (matched[index] || revealed[index])
-                {
-                    return;
-                }
-
                 if (first >= 0 && second >= 0 && cards[first] != cards[second])
                 {
                     revealed[first] = false;
                     revealed[second] = false;
                     first = -1;
                     second = -1;
+                }
+
+                if (matched[index] || revealed[index])
+                {
+                    return;
                 }
 
                 revealed[index] = true;
@@ -1527,7 +1826,7 @@ namespace GroundZero.PuzzleCore
                     var index = i;
                     var stack = ui.Stack(row.transform, "Tube " + i, 4, TextAnchor.LowerCenter);
                     stack.padding = new RectOffset(4, 4, 8, 8);
-                    stack.GetComponent<Image>().color = selected == i ? Warning : TileDark;
+                    ui.StylePanel(stack.GetComponent<RectTransform>(), selected == i ? Warning : TileDark);
                     AddLayout(stack.GetComponent<RectTransform>(), 82, 230);
                     for (var slot = Capacity - 1; slot >= 0; slot--)
                     {
@@ -1829,7 +2128,7 @@ namespace GroundZero.PuzzleCore
             }
 
             public override string Title { get { return "Nonogram"; } }
-            public override string Objective { get { return "Use row and column clues to mark every cell."; } }
+            public override string Objective { get { return "Fill the clue cells. Crosses are optional safety marks."; } }
 
             public override bool IsSolved
             {
@@ -1844,7 +2143,7 @@ namespace GroundZero.PuzzleCore
                                 return false;
                             }
 
-                            if (!solution[x, y] && player[x, y] != 2)
+                            if (!solution[x, y] && player[x, y] == 1)
                             {
                                 return false;
                             }
@@ -1989,7 +2288,7 @@ namespace GroundZero.PuzzleCore
             }
 
             public override string Title { get { return "Flow"; } }
-            public override string Objective { get { return "Connect matching endpoints and cover the whole grid."; } }
+            public override string Objective { get { return "Build one continuous path for each endpoint pair and cover every cell."; } }
 
             public override bool IsSolved
             {
@@ -1999,10 +2298,18 @@ namespace GroundZero.PuzzleCore
                     {
                         for (var x = 0; x < size; x++)
                         {
-                            if (player[x, y] != solution[x, y])
+                            if (player[x, y] < 0)
                             {
                                 return false;
                             }
+                        }
+                    }
+
+                    for (var color = 0; color < colorCount; color++)
+                    {
+                        if (!TryGetEndpoints(color, out var start, out var end) || !FormsSinglePath(color, start, end))
+                        {
+                            return false;
                         }
                     }
 
@@ -2075,17 +2382,7 @@ namespace GroundZero.PuzzleCore
                     }
                 }
 
-                var cuts = new List<int> { 0, path.Count };
-                while (cuts.Count < colorCount + 1)
-                {
-                    var cut = rng.Range(2, path.Count - 2);
-                    if (!cuts.Contains(cut))
-                    {
-                        cuts.Add(cut);
-                    }
-                }
-
-                cuts.Sort();
+                var cuts = GenerateCuts(path.Count, colorCount, 2);
                 for (var color = 0; color < colorCount; color++)
                 {
                     for (var i = cuts[color]; i < cuts[color + 1]; i++)
@@ -2101,6 +2398,169 @@ namespace GroundZero.PuzzleCore
                 }
 
                 Reset();
+            }
+
+            private List<int> GenerateCuts(int pathLength, int segments, int minSegmentLength)
+            {
+                var cuts = new List<int> { 0, pathLength };
+                var guard = 0;
+                while (cuts.Count < segments + 1 && guard++ < 2000)
+                {
+                    var cut = rng.Range(minSegmentLength, pathLength - minSegmentLength + 1);
+                    if (cuts.Contains(cut))
+                    {
+                        continue;
+                    }
+
+                    cuts.Add(cut);
+                    cuts.Sort();
+                    if (SegmentsMeetMinimum(cuts, minSegmentLength))
+                    {
+                        continue;
+                    }
+
+                    cuts.Remove(cut);
+                }
+
+                if (cuts.Count == segments + 1)
+                {
+                    return cuts;
+                }
+
+                cuts.Clear();
+                cuts.Add(0);
+                for (var i = 1; i < segments; i++)
+                {
+                    cuts.Add(Mathf.RoundToInt(pathLength * (i / (float)segments)));
+                }
+
+                cuts.Add(pathLength);
+                return cuts;
+            }
+
+            private bool SegmentsMeetMinimum(List<int> cuts, int minSegmentLength)
+            {
+                for (var i = 1; i < cuts.Count; i++)
+                {
+                    if (cuts[i] - cuts[i - 1] < minSegmentLength)
+                    {
+                        return false;
+                    }
+                }
+
+                return true;
+            }
+
+            private bool TryGetEndpoints(int color, out Vector2Int start, out Vector2Int end)
+            {
+                start = new Vector2Int(-1, -1);
+                end = new Vector2Int(-1, -1);
+                for (var y = 0; y < size; y++)
+                {
+                    for (var x = 0; x < size; x++)
+                    {
+                        if (!endpoint[x, y] || solution[x, y] != color)
+                        {
+                            continue;
+                        }
+
+                        if (start.x < 0)
+                        {
+                            start = new Vector2Int(x, y);
+                        }
+                        else if (end.x < 0)
+                        {
+                            end = new Vector2Int(x, y);
+                        }
+                        else
+                        {
+                            return false;
+                        }
+                    }
+                }
+
+                return start.x >= 0 && end.x >= 0;
+            }
+
+            private bool FormsSinglePath(int color, Vector2Int start, Vector2Int end)
+            {
+                if (player[start.x, start.y] != color || player[end.x, end.y] != color)
+                {
+                    return false;
+                }
+
+                var totalColorCells = 0;
+                for (var y = 0; y < size; y++)
+                {
+                    for (var x = 0; x < size; x++)
+                    {
+                        if (player[x, y] != color)
+                        {
+                            continue;
+                        }
+
+                        totalColorCells++;
+                        var position = new Vector2Int(x, y);
+                        var degree = SameColorNeighborCount(position, color);
+                        if (position == start || position == end)
+                        {
+                            if (degree != 1)
+                            {
+                                return false;
+                            }
+                        }
+                        else if (degree != 2)
+                        {
+                            return false;
+                        }
+                    }
+                }
+
+                var visited = 0;
+                var queue = new Queue<Vector2Int>();
+                var seen = new bool[size, size];
+                queue.Enqueue(start);
+                seen[start.x, start.y] = true;
+
+                while (queue.Count > 0)
+                {
+                    var current = queue.Dequeue();
+                    visited++;
+                    foreach (var neighbor in Neighbors(current))
+                    {
+                        if (seen[neighbor.x, neighbor.y] || player[neighbor.x, neighbor.y] != color)
+                        {
+                            continue;
+                        }
+
+                        seen[neighbor.x, neighbor.y] = true;
+                        queue.Enqueue(neighbor);
+                    }
+                }
+
+                return visited == totalColorCells && seen[end.x, end.y];
+            }
+
+            private int SameColorNeighborCount(Vector2Int position, int color)
+            {
+                var count = 0;
+                foreach (var neighbor in Neighbors(position))
+                {
+                    if (player[neighbor.x, neighbor.y] == color)
+                    {
+                        count++;
+                    }
+                }
+
+                return count;
+            }
+
+            private IEnumerable<Vector2Int> Neighbors(Vector2Int position)
+            {
+                if (position.y > 0) yield return position + GridUp;
+                if (position.x < size - 1) yield return position + GridRight;
+                if (position.y < size - 1) yield return position + GridDown;
+                if (position.x > 0) yield return position + GridLeft;
             }
 
             private void Paint(int x, int y)
@@ -2171,6 +2631,21 @@ namespace GroundZero.PuzzleCore
             private void Generate()
             {
                 board = new int[width, height];
+                var attempts = 0;
+                do
+                {
+                    FillBoardWithoutMatches();
+                    attempts++;
+                }
+                while (!HasAvailableMove() && attempts < 80);
+
+                EnsureAvailableMove();
+                initial = (int[,])board.Clone();
+                Reset();
+            }
+
+            private void FillBoardWithoutMatches()
+            {
                 for (var y = 0; y < height; y++)
                 {
                     for (var x = 0; x < width; x++)
@@ -2185,9 +2660,6 @@ namespace GroundZero.PuzzleCore
                         board[x, y] = value;
                     }
                 }
-
-                initial = (int[,])board.Clone();
-                Reset();
             }
 
             private bool WouldMatchAt(int x, int y, int value)
@@ -2293,6 +2765,11 @@ namespace GroundZero.PuzzleCore
 
                     if (!any)
                     {
+                        if (total > 0)
+                        {
+                            EnsureAvailableMove();
+                        }
+
                         return total;
                     }
 
@@ -2318,6 +2795,138 @@ namespace GroundZero.PuzzleCore
                         }
                     }
                 }
+            }
+
+            private void EnsureAvailableMove()
+            {
+                if (HasAvailableMove())
+                {
+                    return;
+                }
+
+                var values = new List<int>();
+                for (var y = 0; y < height; y++)
+                {
+                    for (var x = 0; x < width; x++)
+                    {
+                        values.Add(board[x, y]);
+                    }
+                }
+
+                for (var attempt = 0; attempt < 80; attempt++)
+                {
+                    rng.Shuffle(values);
+                    var cursor = 0;
+                    for (var y = 0; y < height; y++)
+                    {
+                        for (var x = 0; x < width; x++)
+                        {
+                            board[x, y] = values[cursor++];
+                        }
+                    }
+
+                    if (!HasImmediateMatch() && HasAvailableMove())
+                    {
+                        return;
+                    }
+                }
+
+                CreateGuaranteedMove();
+            }
+
+            private void CreateGuaranteedMove()
+            {
+                for (var y = 0; y < height; y++)
+                {
+                    for (var x = 0; x < width; x++)
+                    {
+                        board[x, y] = (x + y * 2) % colorCount;
+                    }
+                }
+
+                board[0, 0] = 0;
+                board[1, 0] = 1;
+                board[2, 0] = 0;
+                board[0, 1] = 2 % colorCount;
+                board[1, 1] = 0;
+                board[2, 1] = 3 % colorCount;
+                if (height > 2)
+                {
+                    board[1, 2] = 2 % colorCount;
+                }
+            }
+
+            private bool HasAvailableMove()
+            {
+                for (var y = 0; y < height; y++)
+                {
+                    for (var x = 0; x < width; x++)
+                    {
+                        var current = new Vector2Int(x, y);
+                        if (x + 1 < width && SwapCreatesMatch(current, new Vector2Int(x + 1, y)))
+                        {
+                            return true;
+                        }
+
+                        if (y + 1 < height && SwapCreatesMatch(current, new Vector2Int(x, y + 1)))
+                        {
+                            return true;
+                        }
+                    }
+                }
+
+                return false;
+            }
+
+            private bool SwapCreatesMatch(Vector2Int a, Vector2Int b)
+            {
+                Swap(a, b);
+                var matched = HasImmediateMatch();
+                Swap(a, b);
+                return matched;
+            }
+
+            private bool HasImmediateMatch()
+            {
+                for (var y = 0; y < height; y++)
+                {
+                    var runStart = 0;
+                    for (var x = 1; x <= width; x++)
+                    {
+                        if (x < width && board[x, y] == board[runStart, y])
+                        {
+                            continue;
+                        }
+
+                        if (x - runStart >= 3)
+                        {
+                            return true;
+                        }
+
+                        runStart = x;
+                    }
+                }
+
+                for (var x = 0; x < width; x++)
+                {
+                    var runStart = 0;
+                    for (var y = 1; y <= height; y++)
+                    {
+                        if (y < height && board[x, y] == board[x, runStart])
+                        {
+                            continue;
+                        }
+
+                        if (y - runStart >= 3)
+                        {
+                            return true;
+                        }
+
+                        runStart = y;
+                    }
+                }
+
+                return false;
             }
 
             private void Swap(Vector2Int a, Vector2Int b)
